@@ -14,7 +14,20 @@ public static class RabbitMqStartupExtensions
         return services;
     }
     
-    public static IServiceCollection AddRabbitMqEventBusPublisher(this IServiceCollection services)
+    public static IServiceCollection AddRabbitMqSubscriberService(
+        this IServiceCollection services, 
+        IConfigurationManager configuration)
+    {
+        //retrieve the configuration for the queue name from the appsettings.json file
+        services.Configure<EventBusOptions>(
+            configuration.GetSection(EventBusOptions.EventBusSectionName));
+        
+        // register our background worker
+        services.AddHostedService<RabbitMqHostedService>();
+        return services;
+    }
+    
+    public static IServiceCollection AddRabbitMqEventPublisher(this IServiceCollection services)
     {
         services.AddScoped<IEventBus, RabbitMqEventBus>();
         return services;
