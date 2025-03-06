@@ -18,74 +18,71 @@ public class RabbitMqHostedService(
     private const string ExchangeName = "ecommerce-exchange";
     private readonly EventHandlerRegistration _handlerRegistrations = handlerRegistrations.Value;
     private readonly EventBusOptions _eventBusOptions = eventBusOptions.Value;
-
-    public Task StartAsync(CancellationToken cancellationToken)
-{
-    _ = Task.Factory.StartNew(() =>
+    
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var rabbitMqConnection = serviceProvider.GetRequiredService<IRabbitMqConnection>();
-        
-        var channel = rabbitMqConnection.Connection.CreateModel();
-        
-        channel.ExchangeDeclare(
-            exchange: ExchangeName,
-            type: "fanout",
-            durable: false,
-            autoDelete: false,
-            null);
-            
-        channel.QueueDeclare(
-            queue: _eventBusOptions.QueueName,
-            durable: false,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null);
-            
-        var consumer = new EventingBasicConsumer(channel);
-        consumer.Received += OnMessageReceived;
-        
-        channel.BasicConsume(
-            queue: _eventBusOptions.QueueName,
-            autoAck: true,
-            consumer: consumer,
-            consumerTag: string.Empty,
-            noLocal: false,
-            exclusive: false,
-            arguments: null);
-            
-        foreach (var (eventName, _) in _handlerRegistrations.EventTypes)
+        await Task.Factory.StartNew(async () =>
         {
-            channel.QueueBind(
-                queue: _eventBusOptions.QueueName,
+            var rabbitMqConnection = serviceProvider.GetRequiredService<IRabbitMqConnection>();
+            
+            var channel = await rabbitMqConnection.Connection.CreateChannelAsync(cancellationToken: cancellationToken);
+            
+            await channel.ExchangeDeclareAsync(
                 exchange: ExchangeName,
-                routingKey: eventName,
-                arguments: null);
-        }
-    },
-    TaskCreationOptions.LongRunning);
-    
-    return Task.CompletedTask;
-}
-
-private void OnMessageReceived(object? sender, BasicDeliverEventArgs eventArgs)
-{
-    var eventName = eventArgs.RoutingKey;
-    var message = Encoding.UTF8.GetString(eventArgs.Body.Span);
-    
-    using var scope = serviceProvider.CreateScope();
-    
-    if (!_handlerRegistrations.EventTypes.TryGetValue(eventName, out var eventType))
-    {
-        return;
+                type: "fanout",
+                durable: false,
+                autoDelete: false,
+                arguments: null, cancellationToken: cancellationToken);
+                
+            await channel.QueueDeclareAsync(
+                queue: _eventBusOptions.QueueName,
+                durable: false,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null, cancellationToken: cancellationToken);
+                
+            var consumer = new AsyncEventingBasicConsumer(channel);
+            consumer.ReceivedAsync += OnMessageReceivedAsync;
+            
+            await channel.BasicConsumeAsync(
+                queue: _eventBusOptions.QueueName,
+                autoAck: true,
+                consumer: consumer,
+                consumerTag: string.Empty,
+                noLocal: false,
+                exclusive: false,
+                arguments: null, cancellationToken: cancellationToken);
+                
+            foreach (var (eventName, _) in _handlerRegistrations.EventTypes)
+            {
+                await channel.QueueBindAsync(
+                    queue: _eventBusOptions.QueueName,
+                    exchange: ExchangeName,
+                    routingKey: eventName,
+                    arguments: null, cancellationToken: cancellationToken);
+            }
+        }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
-    
-    var @event = JsonSerializer.Deserialize(message, eventType) as Event;
-    foreach (var handler in 
-        scope.ServiceProvider.GetKeyedServices<IEventHandler>(eventType))
-    {
-        handler.Handle(@event);
-    }
-}
+ private async Task OnMessageReceivedAsync(object sender, BasicDeliverEventArgs eventArgs)
+ {
+     var eventName = eventArgs.RoutingKey;
+     var message = Encoding.UTF8.GetString(eventArgs.Body.Span);
+ 
+     using var scope = serviceProvider.CreateScope();
+ 
+     if (!_handlerRegistrations.EventTypes.TryGetValue(eventName, out var eventType))
+     {
+         return;
+     }
+ 
+     var @event = JsonSerializer.Deserialize(message, eventType) as Event;
+     var handlers = scope.ServiceProvider.GetKeyedServices<IEventHandler>(eventType);
+ 
+     foreach (var handler in handlers)
+     {
+         if (@event != null) await handler.Handle(@event);
+     }
+ }   
 
     public Task StopAsync(CancellationToken cancellationToken)
     {

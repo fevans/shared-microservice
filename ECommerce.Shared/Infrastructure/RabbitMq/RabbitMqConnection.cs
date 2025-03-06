@@ -10,15 +10,15 @@ public class RabbitMqConnection : IDisposable, IRabbitMqConnection
     public RabbitMqConnection(RabbitMqOptions options)
     {
         _options = options;
-        InitializeConnection();
+        InitializeConnection().GetAwaiter().GetResult();
     }
-    private void InitializeConnection()
+    private async Task InitializeConnection()
     {
         var factory = new ConnectionFactory
         {
             HostName = _options.HostName
         };
-        _connection = factory.CreateConnection();
+        _connection = await factory.CreateConnectionAsync();
     }
     
     public void Dispose()

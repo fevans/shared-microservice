@@ -10,18 +10,19 @@ public class RabbitMqEventBus(IRabbitMqConnection connection) : IEventBus
     private const string ExchangeName = "ecommerce-exchange";
 
     // Implement the PublishAsync method
-    public Task PublishAsync(Event @event)
+    public async Task PublishAsync(Event @event)
     {
-        using var channel = connection.Connection.CreateModel();
-        channel.ExchangeDeclare(ExchangeName, ExchangeType.Fanout, false, autoDelete: false, null);
+        await using var channel = await connection.Connection.CreateChannelAsync();
+        await channel.ExchangeDeclareAsync(ExchangeName, ExchangeType.Fanout, false, autoDelete: false, null);
         var body = JsonSerializer.SerializeToUtf8Bytes(@event, @event.GetType());
-        channel.BasicPublish( 
+        await channel.BasicPublishAsync( 
             exchange: ExchangeName,
-            routingKey: "",
-            mandatory: false,
-            basicProperties: null,
+            routingKey: string.Empty,
+            
             body: body);
         
-        return Task.CompletedTask;
+        //return Task.CompletedTask;
     }
+    
+    
 }
