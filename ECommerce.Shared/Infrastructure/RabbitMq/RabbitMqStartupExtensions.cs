@@ -25,7 +25,8 @@ public static class RabbitMqStartupExtensions
             configuration.GetSection(EventBusOptions.EventBusSectionName));
         
         // register our background worker
-        services.AddHostedService<RabbitMqHostedService>();
+        services.AddHostedService<RabbitMqHostedService>()
+            .AddSingleton<RabbitMqTelemetry>();
         return services;
     }
     
